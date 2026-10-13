@@ -1,6 +1,6 @@
 """Pydantic v2 models for brief-mcp data structures."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -57,7 +57,7 @@ class PersonProfile(BaseModel):
     recent_news: list[str] = Field(default_factory=list)
     company_news: list[str] = Field(default_factory=list)
     background: Optional[str] = None
-    research_timestamp: datetime = Field(default_factory=datetime.now)
+    research_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     research_sources: list[str] = Field(default_factory=list)
 
     def cache_key(self) -> str:
@@ -75,7 +75,7 @@ class MeetingBrief(BaseModel):
     talking_points: list[str] = Field(default_factory=list)
     watch_outs: list[str] = Field(default_factory=list)
     context_notes: list[str] = Field(default_factory=list)
-    generated_at: datetime = Field(default_factory=datetime.now)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def format_card(self) -> str:
         """Return the brief as a formatted, readable card string."""

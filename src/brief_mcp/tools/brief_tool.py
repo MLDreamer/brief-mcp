@@ -127,7 +127,7 @@ async def _build_brief(meeting: Meeting) -> MeetingBrief:
         attendee_profiles=profiles,
         talking_points=talking_points,
         watch_outs=watch_outs,
-        generated_at=datetime.now(),
+        generated_at=datetime.now(timezone.utc),
     )
 
 
@@ -279,7 +279,7 @@ def register_brief_tools(mcp: FastMCP) -> None:
                 attendee_profiles=attendee_profiles,
                 talking_points=talking_points,
                 watch_outs=watch_outs,
-                generated_at=datetime.now(),
+                generated_at=datetime.now(timezone.utc),
             )
             briefs.append(brief.format_card())
 

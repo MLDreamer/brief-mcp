@@ -1,7 +1,7 @@
 """TTL-based cache to avoid re-researching the same person within 60 minutes."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from cachetools import TTLCache
@@ -24,15 +24,23 @@ def get_cached_profile(name: str, company: str = "") -> Optional[PersonProfile]:
     key = _make_key(name, company)
     profile = _profile_cache.get(key)
     if profile is not None:
-        age_seconds = (datetime.now() - profile.research_timestamp).total_seconds()
+        age_seconds = (datetime.now(timezone.utc) - profile.research_timestamp).total_seconds()
         logger.debug("Cache HIT for '%s' (%.0fs old)", name, age_seconds)
     return profile
 
 
 def set_cached_profile(profile: PersonProfile) -> None:
-    """Store a PersonProfile in the TTL cache."""
+    """Store a PersonProfile in the TTL cache.
+
+    Indexes under both name+company and name-only keys so callers that
+    don't know the company (e.g. calendar lookups) still get a cache hit.
+    """
     key = _make_key(profile.name, profile.company or "")
     _profile_cache[key] = profile
+    # Also store under name-only key so get_cached_profile(name, "") always hits
+    if profile.company:
+        name_only_key = _make_key(profile.name, "")
+        _profile_cache[name_only_key] = profile
     logger.debug("Cache SET for '%s'", profile.name)
 
 

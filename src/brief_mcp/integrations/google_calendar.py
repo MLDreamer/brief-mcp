@@ -123,17 +123,20 @@ def _parse_event(event: dict) -> Optional[Meeting]:
     start_raw = event.get("start", {})
     end_raw = event.get("end", {})
 
+    # Local timezone for all-day events (Google stores them as dates, not times)
+    _local_tz = datetime.now().astimezone().tzinfo
+
     try:
         if "dateTime" in start_raw:
             start_time = datetime.fromisoformat(start_raw["dateTime"])
         else:
-            # All-day event — treat as midnight UTC
-            start_time = datetime.fromisoformat(start_raw["date"] + "T00:00:00+00:00")
+            # All-day event — interpret as midnight in the user's local timezone
+            start_time = datetime.fromisoformat(start_raw["date"] + "T00:00:00").replace(tzinfo=_local_tz)
 
         if "dateTime" in end_raw:
             end_time = datetime.fromisoformat(end_raw["dateTime"])
         else:
-            end_time = datetime.fromisoformat(end_raw["date"] + "T23:59:59+00:00")
+            end_time = datetime.fromisoformat(end_raw["date"] + "T23:59:59").replace(tzinfo=_local_tz)
     except (ValueError, KeyError) as exc:
         logger.warning("Could not parse event times for '%s': %s", summary, exc)
         return None
@@ -163,9 +166,10 @@ def _parse_event(event: dict) -> Optional[Meeting]:
             )
         )
 
-    # If no attendees listed, add organizer
+    # If no attendees listed, add organizer — derive a human name from the email local-part
     if not attendees and organizer_email:
-        attendees.append(Attendee(name=organizer_email, email=organizer_email, is_organizer=True))
+        organizer_name = organizer_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+        attendees.append(Attendee(name=organizer_name, email=organizer_email, is_organizer=True))
 
     description = event.get("description", "")
     location = event.get("location", "")
@@ -220,24 +224,30 @@ async def get_upcoming_events(hours_ahead: int = 24) -> list[Meeting]:
     def _fetch() -> list[dict]:
         try:
             service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-            result = (
-                service.events()
-                .list(
+            all_items: list[dict] = []
+            page_token: Optional[str] = None
+            while True:
+                kwargs: dict = dict(
                     calendarId="primary",
                     timeMin=now.isoformat(),
                     timeMax=time_max.isoformat(),
                     singleEvents=True,
                     orderBy="startTime",
-                    maxResults=25,
+                    maxResults=50,
                 )
-                .execute()
-            )
-            return result.get("items", [])
+                if page_token:
+                    kwargs["pageToken"] = page_token
+                result = service.events().list(**kwargs).execute()
+                all_items.extend(result.get("items", []))
+                page_token = result.get("nextPageToken")
+                if not page_token:
+                    break
+            return all_items
         except HttpError as exc:
             logger.error("Google Calendar API error: %s", exc)
             return []
 
-    raw_events: list[dict] = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+    raw_events: list[dict] = await asyncio.get_running_loop().run_in_executor(None, _fetch)
 
     meetings: list[Meeting] = []
     for event in raw_events:
