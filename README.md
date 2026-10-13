@@ -196,6 +196,15 @@ In `~/.config/zed/settings.json`:
 | `research_attendee` | Web search + news on a person and their company → structured profile (cached 60 min) |
 | `get_meeting_brief` | Looks up one meeting, researches all attendees in parallel → formatted brief card |
 | `brief_all_today` | Generates briefs for every meeting today, deduplicating attendee research across meetings |
+| `get_outlook_meetings` | Reads Outlook/Microsoft 365 Calendar via Microsoft Graph API |
+| `get_outlook_brief` | Full meeting brief from Outlook calendar (same format as get_meeting_brief) |
+| `get_crm_context` | HubSpot CRM: deal stage, lifecycle stage, last contact date, and interaction history |
+| `enrich_brief_with_crm` | Meeting brief + HubSpot deal context for sales and partner meetings |
+| `debrief_meeting` | Record meeting outcomes, auto-extract action items, draft follow-up email, save to memory |
+| `search_meeting_history` | Full-text search across past meetings by person name, topic, company, or date |
+| `get_person_history` | Full interaction history with a specific person — all past meetings, commitments, outcomes |
+| `get_open_action_items` | All open action items from past meetings with owners, due dates, and meeting context |
+| `brief_with_history` | Pre-meeting brief + past interaction history with each attendee from your memory |
 
 ### get_upcoming_meetings
 
@@ -241,6 +250,41 @@ Returns:
   Full daily briefing — one card per meeting, attendees researched
   in parallel, each person researched only once even across meetings
 ```
+
+---
+
+## Configuration
+
+### Microsoft 365 / Outlook Calendar
+
+Register an app in the Azure Portal and set these env vars:
+
+```dotenv
+AZURE_CLIENT_ID=your-app-client-id
+AZURE_TENANT_ID=common          # "common" works for personal Microsoft accounts
+```
+
+On first use, brief-mcp will print a device-code prompt in the terminal. Visit the URL shown, enter the code, and sign in. The token is saved to `~/.brief-mcp/ms_token.json` and refreshed automatically.
+
+**Azure Portal steps (one-time):**
+1. Azure Portal → App registrations → New registration
+2. Platform: Mobile and desktop applications → `https://login.microsoftonline.com/common/oauth2/nativeclient`
+3. API Permissions → Microsoft Graph → Delegated → `Calendars.Read` + `offline_access`
+4. Copy the Application (client) ID → set as `AZURE_CLIENT_ID`
+
+### HubSpot CRM
+
+Create a Private App in HubSpot (Settings → Integrations → Private Apps) with scope `crm.objects.contacts.read` and `crm.objects.deals.read`, then:
+
+```dotenv
+HUBSPOT_API_KEY=pat-na1-xxxx...    # HubSpot private app token
+```
+
+If the key is not set, `get_crm_context` and `enrich_brief_with_crm` return a helpful message rather than crashing.
+
+### Meeting Memory (SQLite)
+
+No configuration required. Memory is stored automatically at `~/.brief-mcp/memory.db` whenever you call `debrief_meeting`. Use `search_meeting_history`, `get_person_history`, and `get_open_action_items` to query it.
 
 ---
 
@@ -317,11 +361,13 @@ See [docs/setup.md](docs/setup.md) for:
 - [x] Formatted brief card output
 - [x] brief_all_today with cross-meeting deduplication
 - [x] Optional Gmail prior-email context
-- [ ] Outlook / Microsoft 365 Calendar support
+- [x] Outlook / Microsoft 365 Calendar support (MSAL device-code flow)
+- [x] CRM enrichment — HubSpot contacts, deals, lifecycle stage
+- [x] Meeting memory — SQLite FTS5, debrief, action items, interaction history
+- [x] brief_with_history — pre-meeting brief + past interaction context
 - [ ] LinkedIn official API integration (when available)
-- [ ] CRM enrichment (Salesforce / HubSpot)
+- [ ] Salesforce CRM connector
 - [ ] Brief as email / Slack message export
-- [ ] Recurring meeting memory ("last time you met Bob you discussed X")
 - [ ] Voice brief via text-to-speech
 
 ---
