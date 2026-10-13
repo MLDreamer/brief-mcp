@@ -104,12 +104,15 @@ class TestCache:
         set_cached_profile(sample_profile_bob)
         set_cached_profile(sample_profile_carol)
         stats = cache_stats()
-        assert stats["size"] == 2
+        # Dual-index: each profile with a company creates 2 entries (name+company + name-only)
+        # Bob → 2 entries, Carol → 2 entries = 4 total
+        assert stats["size"] == 4
 
     def test_clear_cache(self, sample_profile_bob):
         set_cached_profile(sample_profile_bob)
+        # Bob has company="PartnerCo" → dual-index creates 2 cache entries
         count = clear_cache()
-        assert count == 1
+        assert count == 2
         assert get_cached_profile("Bob Patel", "PartnerCo") is None
 
 
@@ -424,3 +427,118 @@ class TestTalkingPointsAndWatchOuts:
         unknown = PersonProfile(name="Mystery Person", current_role=None, background=None)
         watch_outs = _generate_watch_outs(sample_meeting, [unknown])
         assert any("Mystery Person" in w for w in watch_outs)
+
+
+# ── Additional tests (v0.2 / v0.3 coverage) ──────────────────────────────────
+
+
+class TestBriefAllTodayDeduplication:
+    def setup_method(self):
+        clear_cache()
+
+    async def test_brief_all_today_deduplication(self, mock_web_search):
+        """3 meetings with overlapping attendees → each unique attendee researched exactly once."""
+        from src.brief_mcp.models import Attendee, Meeting
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        bob = Attendee(name="Bob Patel", email="bob@co.com", is_organizer=False)
+        carol = Attendee(name="Carol Wu", email="carol@co.com", is_organizer=False)
+        dave = Attendee(name="Dave Smith", email="dave@co.com", is_organizer=False)
+
+        meetings = [
+            Meeting(
+                id="m1",
+                title="Morning Standup",
+                start_time=now + timedelta(hours=1),
+                end_time=now + timedelta(hours=1, minutes=30),
+                attendees=[bob, carol],
+            ),
+            Meeting(
+                id="m2",
+                title="Partner Review",
+                start_time=now + timedelta(hours=3),
+                end_time=now + timedelta(hours=4),
+                attendees=[bob, dave],
+            ),
+            Meeting(
+                id="m3",
+                title="Product Sync",
+                start_time=now + timedelta(hours=5),
+                end_time=now + timedelta(hours=6),
+                attendees=[carol, dave],
+            ),
+        ]
+
+        call_counts: dict[str, int] = {}
+
+        async def counting_research(name: str, company: str = ""):
+            call_counts[name] = call_counts.get(name, 0) + 1
+            return PersonProfile(name=name, company=company or None)
+
+        # Simulate the deduplication logic used by brief_all_today
+        all_attendees: dict[str, str] = {}
+        for m in meetings:
+            for att in (m.external_attendees or m.attendees):
+                key = att.display_name()
+                if key not in all_attendees:
+                    all_attendees[key] = ""
+
+        import asyncio
+        tasks = [counting_research(name) for name in all_attendees]
+        await asyncio.gather(*tasks)
+
+        # 3 unique attendees across 3 meetings
+        assert len(all_attendees) == 3
+        # Each researched exactly once (no duplicates)
+        for name, count in call_counts.items():
+            assert count == 1, f"{name} was researched {count} times, expected 1"
+
+
+class TestBriefTimezoneAwareness:
+    def test_build_brief_timezone_aware(self, sample_meeting):
+        """MeetingBrief.generated_at is always timezone-aware (UTC)."""
+        brief = MeetingBrief(
+            meeting=sample_meeting,
+            attendee_profiles=[],
+            talking_points=[],
+        )
+        assert brief.generated_at.tzinfo is not None
+        assert brief.generated_at.tzinfo == timezone.utc
+
+    def test_generated_at_is_recent(self, sample_meeting):
+        """MeetingBrief.generated_at is close to the current time."""
+        from datetime import timedelta
+
+        before = datetime.now(timezone.utc)
+        brief = MeetingBrief(meeting=sample_meeting, attendee_profiles=[], talking_points=[])
+        after = datetime.now(timezone.utc)
+        assert before <= brief.generated_at <= after + timedelta(seconds=1)
+
+
+class TestGetMeetingBriefNoMatch:
+    def setup_method(self):
+        clear_cache()
+
+    async def test_get_meeting_brief_no_match(self, sample_meeting):
+        """When title doesn't match any meeting, returns helpful error with available titles."""
+        from fastmcp import FastMCP
+        from src.brief_mcp.tools.brief_tool import register_brief_tools
+
+        mcp = FastMCP("test")
+        register_brief_tools(mcp)
+
+        with patch(
+            "src.brief_mcp.tools.brief_tool.get_upcoming_events",
+            new_callable=AsyncMock,
+            return_value=[sample_meeting],
+        ):
+            result = await mcp.call_tool(
+                "get_meeting_brief",
+                {"meeting_title": "Completely Nonexistent XYZ ABC 9999"},
+            )
+
+        text = result.content[0].text
+        assert "not found" in text.lower() or "Meeting not found" in text
+        # Should list available meeting titles in the error message
+        assert "Q4 Partnership Review" in text

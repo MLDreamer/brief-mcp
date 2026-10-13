@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -138,22 +139,51 @@ def _acquire_token_sync() -> Optional[str]:
     return None
 
 
+_WIN_TO_IANA = {
+    "Eastern Standard Time": "America/New_York",
+    "Eastern Daylight Time": "America/New_York",
+    "Central Standard Time": "America/Chicago",
+    "Central Daylight Time": "America/Chicago",
+    "Mountain Standard Time": "America/Denver",
+    "Pacific Standard Time": "America/Los_Angeles",
+    "Pacific Daylight Time": "America/Los_Angeles",
+    "India Standard Time": "Asia/Kolkata",
+    "GMT Standard Time": "Europe/London",
+    "W. Europe Standard Time": "Europe/Berlin",
+    "Tokyo Standard Time": "Asia/Tokyo",
+    "China Standard Time": "Asia/Shanghai",
+    "AUS Eastern Standard Time": "Australia/Sydney",
+}
+
+
 def _parse_ms_datetime(dt_obj: Optional[dict]) -> Optional[datetime]:
-    """Parse a Graph API dateTime object {'dateTime': '...', 'timeZone': '...'} to a UTC datetime."""
+    """Parse a Graph API dateTime object {'dateTime': '...', 'timeZone': '...'} to a datetime.
+
+    Graph API returns naive datetime strings with a separate timeZone field (Windows or IANA name).
+    We must check tz_name FIRST and attach the correct timezone, not blindly attach UTC.
+    """
     if not dt_obj:
         return None
     raw = dt_obj.get("dateTime", "")
     if not raw:
         return None
     try:
-        # Graph returns times in the specified timeZone but the string itself is naive
-        # We treat it as UTC when the timeZone is "UTC", otherwise we normalise via fromisoformat
         dt = datetime.fromisoformat(raw.rstrip("Z"))
-        # If the server returned UTC explicitly, attach timezone
         tz_name = dt_obj.get("timeZone", "UTC")
-        if tz_name == "UTC" or dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+        # Resolve timezone: UTC variants → utc, IANA name → ZoneInfo, Windows name → map
+        if tz_name.upper() in ("UTC", "COORDINATED UNIVERSAL TIME", ""):
+            return dt.replace(tzinfo=timezone.utc)
+        # Try direct IANA lookup first
+        try:
+            return dt.replace(tzinfo=ZoneInfo(tz_name))
+        except Exception:
+            pass
+        # Fall back to Windows-to-IANA mapping
+        iana = _WIN_TO_IANA.get(tz_name)
+        if iana:
+            return dt.replace(tzinfo=ZoneInfo(iana))
+        logger.warning("Unknown timezone '%s' for Graph datetime — defaulting to UTC", tz_name)
+        return dt.replace(tzinfo=timezone.utc)
     except (ValueError, TypeError) as exc:
         logger.warning("Could not parse MS datetime '%s': %s", raw, exc)
         return None

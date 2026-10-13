@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     action_items TEXT,
     outcomes TEXT,
     follow_up_sent INTEGER DEFAULT 0,
+    completed_items TEXT DEFAULT '[]',
     created_at TEXT NOT NULL
 );
 """
@@ -61,10 +62,9 @@ END;
 _CREATE_FTS_TRIGGER_UPDATE = """
 CREATE TRIGGER IF NOT EXISTS meetings_fts_update
 AFTER UPDATE ON meetings BEGIN
-    UPDATE meetings_fts
-    SET title=new.title, attendees=new.attendees, brief_summary=new.brief_summary,
-        action_items=new.action_items, outcomes=new.outcomes
-    WHERE rowid=new.rowid;
+    DELETE FROM meetings_fts WHERE rowid = old.rowid;
+    INSERT INTO meetings_fts(rowid, title, attendees, brief_summary, action_items, outcomes)
+    VALUES (new.rowid, new.title, new.attendees, new.brief_summary, new.action_items, new.outcomes);
 END;
 """
 
@@ -172,6 +172,7 @@ def save_meeting_record(record: dict) -> str:
     attendees_json = _to_json(record.get("attendees", []))
     action_items_json = _to_json(record.get("action_items", []))
     outcomes_json = _to_json(record.get("outcomes", []))
+    completed_items_json = _to_json(record.get("completed_items", []))
     brief_summary = record.get("brief_summary") or None
 
     with _get_connection() as conn:
@@ -179,8 +180,8 @@ def save_meeting_record(record: dict) -> str:
             """
             INSERT OR REPLACE INTO meetings
                 (id, title, date, attendees, brief_summary, action_items, outcomes,
-                 follow_up_sent, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 follow_up_sent, completed_items, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meeting_id,
@@ -191,6 +192,7 @@ def save_meeting_record(record: dict) -> str:
                 action_items_json,
                 outcomes_json,
                 follow_up_sent,
+                completed_items_json,
                 created_at,
             ),
         )
@@ -220,7 +222,7 @@ def search_meetings(query: str, limit: int = 10) -> list[dict]:
                 SELECT m.*
                 FROM meetings m
                 JOIN meetings_fts fts ON m.rowid = fts.rowid
-                WHERE meetings_fts MATCH ?
+                WHERE fts MATCH ?
                 ORDER BY rank
                 LIMIT ?
                 """,
@@ -327,20 +329,26 @@ def get_action_items(status: str = "open") -> list[dict]:
     for row in rows:
         d = _row_to_dict(row)
         action_items = _safe_json_loads(d.get("action_items"), [])
+        completed = _safe_json_loads(d.get("completed_items"), [])
         for item in action_items:
             if isinstance(item, dict):
+                task = item.get("task", "")
+                if task in completed:
+                    continue
                 results.append(
                     {
                         "meeting_id": d["id"],
                         "meeting_title": d["title"],
                         "meeting_date": d["date"],
                         "owner": item.get("owner", ""),
-                        "task": item.get("task", ""),
+                        "task": task,
                         "due_date": item.get("due_date", ""),
                         "follow_up_sent": d.get("follow_up_sent", 0),
                     }
                 )
             elif isinstance(item, str):
+                if item in completed:
+                    continue
                 results.append(
                     {
                         "meeting_id": d["id"],
@@ -356,18 +364,36 @@ def get_action_items(status: str = "open") -> list[dict]:
     return results
 
 
-def mark_action_done(action_id: str) -> bool:
-    """Mark a meeting's follow_up_sent flag as done (1).
+def mark_action_done(action_id: str, item_text: str = "") -> bool:
+    """Mark a specific action item done, or close the whole meeting's follow-up.
 
-    action_id is the meeting id. Returns True on success.
+    action_id: the meeting id.
+    item_text: if provided, marks only that specific task text as done by adding it to
+               completed_items (JSON list). If empty, sets follow_up_sent = 1 which
+               closes the entire meeting's action list.
+    Returns True on success.
     """
     init_db()
     try:
         with _get_connection() as conn:
-            cursor = conn.execute(
-                "UPDATE meetings SET follow_up_sent = 1 WHERE id = ?",
-                (action_id,),
-            )
+            if item_text:
+                row = conn.execute(
+                    "SELECT completed_items FROM meetings WHERE id = ?", (action_id,)
+                ).fetchone()
+                if row is None:
+                    return False
+                completed = _safe_json_loads(row["completed_items"], [])
+                if item_text not in completed:
+                    completed.append(item_text)
+                cursor = conn.execute(
+                    "UPDATE meetings SET completed_items = ? WHERE id = ?",
+                    (json.dumps(completed, ensure_ascii=False), action_id),
+                )
+            else:
+                cursor = conn.execute(
+                    "UPDATE meetings SET follow_up_sent = 1 WHERE id = ?",
+                    (action_id,),
+                )
             conn.commit()
             return cursor.rowcount > 0
     except Exception as exc:

@@ -176,3 +176,107 @@ def mock_httpx_brave():
         return_value=mock_resp,
     ) as mock:
         yield mock
+
+
+# ── Fixture: memory database (tmp_path isolated) ─────────────────────────────
+
+
+@pytest.fixture
+def memory_db(tmp_path, monkeypatch):
+    """Patch the memory module to use a temp directory for DB isolation.
+
+    Prevents tests from writing to ~/.brief-mcp/memory.db.
+    """
+    db_path = tmp_path / "memory.db"
+    monkeypatch.setattr("src.brief_mcp.memory._DB_PATH", db_path)
+    monkeypatch.setattr("src.brief_mcp.memory._DB_DIR", tmp_path)
+    yield db_path
+
+
+# ── Fixtures: HubSpot mock data ───────────────────────────────────────────────
+
+
+@pytest.fixture
+def sample_hs_contact_props() -> dict:
+    """Raw HubSpot contact properties dict as returned by the API."""
+    return {
+        "firstname": "Jane",
+        "lastname": "Doe",
+        "email": "jane.doe@acme.com",
+        "company": "Acme Corp",
+        "jobtitle": "VP Sales",
+        "phone": "+1-555-0100",
+        "lifecyclestage": "customer",
+        "notes_last_contacted": "1728000000000",  # epoch ms
+    }
+
+
+@pytest.fixture
+def sample_hs_contact_obj(sample_hs_contact_props) -> dict:
+    """Full HubSpot contact object as returned from the search API."""
+    return {
+        "id": "hs_contact_001",
+        "properties": sample_hs_contact_props,
+    }
+
+
+@pytest.fixture
+def sample_hs_deal_obj() -> dict:
+    """Full HubSpot deal object as returned from the deals API."""
+    return {
+        "id": "hs_deal_001",
+        "properties": {
+            "dealname": "Acme Enterprise Deal",
+            "dealstage": "proposal",
+            "amount": "75000",
+            "closedate": "2026-12-31T00:00:00.000Z",
+            "notes_last_updated": None,
+        },
+    }
+
+
+# ── Fixtures: Outlook mock events ─────────────────────────────────────────────
+
+
+def _make_outlook_event(
+    event_id: str = "ot_evt_001",
+    subject: str = "Test Outlook Meeting",
+    start: str = "2026-10-13T10:00:00",
+    end: str = "2026-10-13T11:00:00",
+    attendees: list | None = None,
+    join_url: str | None = None,
+    location: str | None = None,
+) -> dict:
+    """Build a minimal Microsoft Graph API calendar event dict."""
+    raw: dict = {
+        "id": event_id,
+        "subject": subject,
+        "start": {"dateTime": start, "timeZone": "UTC"},
+        "end": {"dateTime": end, "timeZone": "UTC"},
+        "attendees": attendees or [],
+        "location": {"displayName": location} if location else {},
+        "bodyPreview": "Test meeting body preview.",
+    }
+    if join_url:
+        raw["onlineMeeting"] = {"joinUrl": join_url}
+    return raw
+
+
+@pytest.fixture
+def sample_outlook_event() -> dict:
+    return _make_outlook_event(
+        event_id="ot_evt_teams",
+        subject="Weekly Team Sync",
+        attendees=[
+            {
+                "emailAddress": {"address": "alice@example.com", "name": "Alice Example"},
+                "type": "required",
+            },
+            {
+                "emailAddress": {"address": "bob@example.com", "name": "Bob Example"},
+                "type": "required",
+            },
+        ],
+        join_url="https://teams.microsoft.com/join/abc123",
+        location="Microsoft Teams",
+    )

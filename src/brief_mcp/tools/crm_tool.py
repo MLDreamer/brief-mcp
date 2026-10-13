@@ -10,45 +10,12 @@ from datetime import datetime, timezone
 
 from fastmcp import FastMCP
 
-from ..cache import get_cached_profile, set_cached_profile
 from ..integrations.google_calendar import get_upcoming_events
 from ..integrations.hubspot import get_crm_context as _hubspot_crm_context
-from ..integrations.web_search import research_person
 from ..models import Meeting, MeetingBrief
+from ._shared import _find_meeting, _research_attendee_with_cache
 
 logger = logging.getLogger(__name__)
-
-
-def _find_meeting(meetings: list[Meeting], title: str = "", meeting_id: str = "") -> Meeting | None:
-    """Find a meeting by partial title match or exact ID."""
-    if meeting_id:
-        for m in meetings:
-            if m.id == meeting_id:
-                return m
-    if title:
-        title_lower = title.lower()
-        for m in meetings:
-            if m.title.lower() == title_lower:
-                return m
-        for m in meetings:
-            if title_lower in m.title.lower():
-                return m
-    return None
-
-
-async def _research_attendee_with_cache(name: str, company: str = "") -> object:
-    """Research a single attendee, using cache if available."""
-    cached = get_cached_profile(name, company)
-    if cached is not None:
-        return cached
-    try:
-        profile = await research_person(name, company)
-        set_cached_profile(profile)
-        return profile
-    except Exception as exc:
-        logger.warning("Research failed for '%s': %s", name, exc)
-        from ..models import PersonProfile
-        return PersonProfile(name=name, company=company or None)
 
 
 def register_crm_tools(mcp: FastMCP) -> None:
@@ -175,7 +142,11 @@ def register_crm_tools(mcp: FastMCP) -> None:
                 f"{sep}\n"
                 + "\n\n".join(f"  {line}" for block in crm_section_lines for line in block.splitlines())
             )
-            card = card.rstrip("=" * 60).rstrip() + crm_block + "\n" + "=" * 60
+            sep_line = "=" * 60
+            if card.endswith(sep_line):
+                card = card[: -len(sep_line)]
+            card = card.rstrip()
+            card = card + crm_block + "\n" + sep_line
         else:
             card += (
                 "\n\n  [CRM: No HubSpot records found for attendees. "

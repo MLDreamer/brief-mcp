@@ -98,6 +98,7 @@ def _parse_contact(contact_obj: dict) -> Optional[HubSpotContact]:
     phone = props.get("phone") or None
     lifecycle_stage = props.get("lifecyclestage") or None
     last_contacted = _parse_hs_datetime(props.get("notes_last_contacted"))
+    # notes: fetched via /crm/v4/objects/notes associations — not yet implemented
 
     return HubSpotContact(
         name=name,
@@ -107,6 +108,7 @@ def _parse_contact(contact_obj: dict) -> Optional[HubSpotContact]:
         phone=phone,
         lifecycle_stage=lifecycle_stage,
         last_contacted=last_contacted,
+        # notes left as default [] — association fetch not yet implemented
     )
 
 

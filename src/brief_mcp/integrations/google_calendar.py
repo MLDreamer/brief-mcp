@@ -202,8 +202,12 @@ def _parse_event(event: dict) -> Optional[Meeting]:
     )
 
 
-async def get_upcoming_events(hours_ahead: int = 24) -> list[Meeting]:
-    """Fetch upcoming Google Calendar events for the next N hours.
+async def get_upcoming_events(hours_ahead: int = 24, hours_past: int = 0) -> list[Meeting]:
+    """Fetch Google Calendar events in a time window.
+
+    Args:
+        hours_ahead: How many hours into the future to fetch (default: 24).
+        hours_past:  How many hours into the past to include (default: 0).
 
     Returns an empty list (with a log warning) if Google Calendar is not configured
     rather than raising an exception — graceful degradation.
@@ -218,6 +222,7 @@ async def get_upcoming_events(hours_ahead: int = 24) -> list[Meeting]:
         return []
 
     now = datetime.now(timezone.utc)
+    time_min = now - timedelta(hours=hours_past)
     time_max = now + timedelta(hours=hours_ahead)
 
     # Run the blocking Google API call in a thread pool to keep async safety
@@ -229,7 +234,7 @@ async def get_upcoming_events(hours_ahead: int = 24) -> list[Meeting]:
             while True:
                 kwargs: dict = dict(
                     calendarId="primary",
-                    timeMin=now.isoformat(),
+                    timeMin=time_min.isoformat(),
                     timeMax=time_max.isoformat(),
                     singleEvents=True,
                     orderBy="startTime",
@@ -255,5 +260,7 @@ async def get_upcoming_events(hours_ahead: int = 24) -> list[Meeting]:
         if parsed is not None:
             meetings.append(parsed)
 
-    logger.info("Fetched %d upcoming meetings (next %dh)", len(meetings), hours_ahead)
+    logger.info(
+        "Fetched %d meetings (past %dh / ahead %dh)", len(meetings), hours_past, hours_ahead
+    )
     return meetings

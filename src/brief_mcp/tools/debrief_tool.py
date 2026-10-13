@@ -13,9 +13,7 @@ from typing import Optional
 
 from fastmcp import FastMCP
 
-from ..cache import get_cached_profile, set_cached_profile
 from ..integrations.google_calendar import get_upcoming_events
-from ..integrations.web_search import research_person
 from ..memory import (
     get_action_items,
     get_person_history as _db_person_history,
@@ -26,43 +24,12 @@ from ..memory import (
     search_meetings as _db_search_meetings,
 )
 from ..models import Meeting, MeetingBrief
+from ._shared import _find_meeting, _research_attendee_with_cache
 
 logger = logging.getLogger(__name__)
 
 
 # ── Helper utilities ───────────────────────────────────────────────────────────
-
-
-def _find_meeting(meetings: list[Meeting], title: str = "", meeting_id: str = "") -> Optional[Meeting]:
-    """Find a meeting by partial title match or exact ID."""
-    if meeting_id:
-        for m in meetings:
-            if m.id == meeting_id:
-                return m
-    if title:
-        title_lower = title.lower()
-        for m in meetings:
-            if m.title.lower() == title_lower:
-                return m
-        for m in meetings:
-            if title_lower in m.title.lower():
-                return m
-    return None
-
-
-async def _research_attendee_with_cache(name: str, company: str = "") -> object:
-    """Research a single attendee, using cache if available."""
-    cached = get_cached_profile(name, company)
-    if cached is not None:
-        return cached
-    try:
-        profile = await research_person(name, company)
-        set_cached_profile(profile)
-        return profile
-    except Exception as exc:
-        logger.warning("Research failed for '%s': %s", name, exc)
-        from ..models import PersonProfile
-        return PersonProfile(name=name, company=company or None)
 
 
 def _parse_action_items_from_text(text: str) -> list[dict]:
@@ -79,7 +46,7 @@ def _parse_action_items_from_text(text: str) -> list[dict]:
 
     # Explicit action/todo markers
     action_patterns = [
-        re.compile(r"(?:ACTION|TODO|FOLLOW.?UP|AI)\s*:?\s*(?:@(\w+(?:\s\w+)?)\s+)?(.+?)(?:\s+by\s+(\w.+?))?$", re.IGNORECASE | re.MULTILINE),
+        re.compile(r"(?:ACTION|TODO|FOLLOW.?UP)\s*:\s*(?:@(\w+(?:\s\w+)?)\s+)?(.+?)(?:\s+by\s+(\w.+?))?$", re.IGNORECASE | re.MULTILINE),
         re.compile(r"^[-*]\s+\[\s?\]\s+(.+)$", re.MULTILINE),
     ]
 
@@ -275,7 +242,11 @@ def register_debrief_tools(mcp: FastMCP) -> None:
         meeting_id_for_record = str(uuid.uuid4())
 
         try:
-            meetings = await get_upcoming_events(48)
+            # Look back 24h for recently-ended meetings, ahead 2h for imminent ones
+            meetings = await get_upcoming_events(hours_ahead=2, hours_past=24)
+            if not meetings:
+                from ..integrations.outlook_calendar import get_outlook_events
+                meetings = await get_outlook_events(hours_ahead=2)
             calendar_meeting = _find_meeting(meetings, title=meeting_title)
             if calendar_meeting:
                 meeting_date = calendar_meeting.start_time.isoformat()
