@@ -17,7 +17,7 @@ You open Claude and type: *"Brief me for my 2pm call."*
 
 Claude responds:
 
-```
+```text
 ============================================================
   MEETING BRIEF: Q4 PARTNERSHIP REVIEW
 ============================================================
@@ -90,7 +90,7 @@ pip install brief-mcp
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/brief-mcp
+git clone https://github.com/MLDreamer/brief-mcp
 cd brief-mcp
 uv sync
 uv run brief-mcp
@@ -102,7 +102,7 @@ uv run brief-mcp
 
 **1. Get a Google credentials.json** (one-time, 5 minutes — [full guide](docs/setup.md)):
 
-```
+```text
 Google Cloud Console → APIs → Google Calendar API → Enable
                      → Credentials → OAuth 2.0 Desktop App → Download JSON
 ```
@@ -191,7 +191,7 @@ In `~/.config/zed/settings.json`:
 ## Available Tools
 
 | Tool | What it does |
-|---|---|
+| --- | --- |
 | `get_upcoming_meetings` | Reads Google Calendar → returns meetings in the next N hours with attendees and video links |
 | `research_attendee` | Web search + news on a person and their company → structured profile (cached 60 min) |
 | `get_meeting_brief` | Looks up one meeting, researches all attendees in parallel → formatted brief card |
@@ -199,7 +199,7 @@ In `~/.config/zed/settings.json`:
 
 ### get_upcoming_meetings
 
-```
+```text
 Arguments:
   hours_ahead: int = 24    # How far ahead to look (1-168)
 
@@ -209,7 +209,7 @@ Returns:
 
 ### research_attendee
 
-```
+```text
 Arguments:
   name: str                # Full name (required)
   company: str = ""        # Company improves accuracy
@@ -222,7 +222,7 @@ Returns:
 
 ### get_meeting_brief
 
-```
+```text
 Arguments:
   meeting_title: str = ""  # Partial title match
   meeting_id: str = ""     # Exact ID from get_upcoming_meetings
@@ -234,7 +234,7 @@ Returns:
 
 ### brief_all_today
 
-```
+```text
 Arguments: none
 
 Returns:
@@ -246,7 +246,7 @@ Returns:
 
 ## Example Prompts
 
-```
+```text
 "Brief me for my 2pm meeting."
 "Who is Jane Smith from Acme Corp?"
 "What should I know before my board presentation today?"
@@ -259,7 +259,7 @@ Returns:
 
 ## Architecture
 
-```
+```text
 brief-mcp/
 ├── server.py              FastMCP server + tool registration
 ├── models.py              Pydantic v2: Meeting, PersonProfile, MeetingBrief
@@ -300,6 +300,7 @@ brief-mcp/
 ## Full Setup Guide
 
 See [docs/setup.md](docs/setup.md) for:
+
 - Step-by-step Google Cloud Console OAuth2 setup
 - Gmail enrichment configuration
 - Brave Search API key setup
@@ -330,7 +331,7 @@ See [docs/setup.md](docs/setup.md) for:
 Contributions are welcome. Please open an issue before submitting a large PR.
 
 ```bash
-git clone https://github.com/yourusername/brief-mcp
+git clone https://github.com/MLDreamer/brief-mcp
 cd brief-mcp
 uv sync --dev
 uv run pytest
