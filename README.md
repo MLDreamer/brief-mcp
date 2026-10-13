@@ -801,6 +801,12 @@ uv run ruff format src/ tests/
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=MLDreamer/brief-mcp&type=Date)](https://star-history.com/#MLDreamer/brief-mcp&Date)
+
+---
+
 ## Similar Projects
 
 - [blender-mcp](https://github.com/ahujasid/blender-mcp) — AI controls Blender 3D
