@@ -8,6 +8,7 @@
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-7c3aed)](https://modelcontextprotocol.io/)
 [![Tests](https://img.shields.io/badge/tests-123%20passing-22c55e)](#)
 [![CI](https://github.com/MLDreamer/brief-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MLDreamer/brief-mcp/actions)
+[![Glama](https://glama.ai/mcp/servers/MLDreamer/brief-mcp/badges/score.svg)](https://glama.ai/mcp/servers/MLDreamer/brief-mcp)
 
 **brief-mcp** is the first open-source [Model Context Protocol](https://modelcontextprotocol.io/) server for meeting intelligence. It connects Claude — and any MCP-compatible AI assistant — to your calendar, the web, your CRM, and your own meeting history, then generates executive-grade briefing cards in seconds.
 
