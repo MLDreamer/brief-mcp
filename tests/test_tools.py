@@ -212,7 +212,7 @@ class TestGetMeetingBrief:
             "src.brief_mcp.tools.brief_tool.get_upcoming_events",
             new_callable=AsyncMock,
         ) as mock_cal, patch(
-            "src.brief_mcp.tools.brief_tool.research_person",
+            "src.brief_mcp.tools.brief_tool._research_attendee_with_cache",
             new_callable=AsyncMock,
         ) as mock_research:
             from src.brief_mcp.models import PersonProfile
@@ -312,7 +312,7 @@ class TestBriefAllToday:
             new_callable=AsyncMock,
             return_value=meetings,
         ), patch(
-            "src.brief_mcp.tools.brief_tool.research_person",
+            "src.brief_mcp.tools.brief_tool._research_attendee_with_cache",
             new_callable=AsyncMock,
             side_effect=mock_web_search.side_effect,
         ):
@@ -379,7 +379,7 @@ class TestBriefAllToday:
             new_callable=AsyncMock,
             return_value=meetings,
         ), patch(
-            "src.brief_mcp.tools.brief_tool.research_person",
+            "src.brief_mcp.tools.brief_tool._research_attendee_with_cache",
             side_effect=counting_research,
         ):
             # Simulate deduplicated gather (brief_all_today logic)

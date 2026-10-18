@@ -310,6 +310,55 @@ class TestActionItems:
         assert "Schedule follow-up" in tasks
 
 
+# ── regression: UPSERT preserves completed_items on re-debrief ───────────────
+
+
+class TestUpsertPreservesCompletedItems:
+    def test_save_meeting_preserves_completed_items_on_resave(self, memory_db):
+        """Re-saving a meeting (same id) must not erase previously completed items."""
+        meeting_id = save_meeting_record({
+            "id": "m_upsert_1",
+            "title": "Resave Test",
+            "date": "2026-01-01T09:00:00+00:00",
+            "action_items": [{"task": "write spec", "owner": "", "due_date": ""}],
+        })
+        mark_action_done(meeting_id, "write spec")
+
+        # Verify it is no longer open
+        open_before = get_action_items("open")
+        assert not any(i["task"] == "write spec" for i in open_before)
+
+        # Re-save without passing completed_items (simulates re-debrief)
+        save_meeting_record({
+            "id": "m_upsert_1",
+            "title": "Resave Test",
+            "date": "2026-01-01T09:00:00+00:00",
+            "action_items": [{"task": "write spec", "owner": "", "due_date": ""}],
+        })
+
+        # completed_items must still be honoured — task stays off the open list
+        open_after = get_action_items("open")
+        assert not any(i["task"] == "write spec" for i in open_after)
+
+    def test_get_action_items_all_includes_completed(self, memory_db):
+        """get_action_items('all') must return completed tasks as well as open ones."""
+        meeting_id = save_meeting_record({
+            "id": "m_upsert_2",
+            "title": "All Items Test",
+            "date": "2026-01-01T09:00:00+00:00",
+            "action_items": [{"task": "review docs", "owner": "", "due_date": ""}],
+        })
+        mark_action_done(meeting_id, "review docs")
+
+        # status="open" should NOT include it
+        open_items = get_action_items("open")
+        assert not any(i["task"] == "review docs" for i in open_items)
+
+        # status="all" MUST include it
+        all_items = get_action_items("all")
+        assert any(i["task"] == "review docs" for i in all_items)
+
+
 # ── save_person_interaction ───────────────────────────────────────────────────
 
 

@@ -100,7 +100,7 @@ register_outlook_tools(mcp)
 register_crm_tools(mcp)
 register_debrief_tools(mcp)
 
-logger.info("brief-mcp server initialized with %d tools", 13)
+logger.info("brief-mcp server initialized with %d tools", len(mcp._tool_manager.tools))
 
 
 def main() -> None:

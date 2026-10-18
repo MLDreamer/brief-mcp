@@ -40,7 +40,11 @@ def set_cached_profile(profile: PersonProfile) -> None:
     # Also store under name-only key so get_cached_profile(name, "") always hits
     if profile.company:
         name_only_key = _make_key(profile.name, "")
-        _profile_cache[name_only_key] = profile
+        existing = _profile_cache.get(name_only_key)
+        # Write name-only key if: no entry yet, OR same company is refreshing its own entry.
+        # Never overwrite a different company's entry — that causes same-name collisions.
+        if existing is None or existing.company == profile.company:
+            _profile_cache[name_only_key] = profile
     logger.debug("Cache SET for '%s'", profile.name)
 
 

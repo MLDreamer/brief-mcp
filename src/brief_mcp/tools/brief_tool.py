@@ -7,14 +7,11 @@ parallel attendee research, and formatted output.
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
-
 from fastmcp import FastMCP
 
-from ..cache import get_cached_profile, set_cached_profile
 from ..integrations.google_calendar import get_upcoming_events
-from ..integrations.web_search import research_person
 from ..models import Meeting, MeetingBrief
+from ._shared import _find_meeting, _research_attendee_with_cache
 
 logger = logging.getLogger(__name__)
 
@@ -87,21 +84,6 @@ def _generate_watch_outs(meeting: Meeting, profiles: list) -> list[str]:
     return watch_outs[:4]
 
 
-async def _research_attendee_with_cache(name: str, company: str = "") -> object:
-    """Research a single attendee, using cache if available."""
-    cached = get_cached_profile(name, company)
-    if cached is not None:
-        return cached
-    try:
-        profile = await research_person(name, company)
-        set_cached_profile(profile)
-        return profile
-    except Exception as exc:
-        logger.warning("Research failed for '%s': %s", name, exc)
-        from ..models import PersonProfile
-        return PersonProfile(name=name, company=company or None)
-
-
 async def _build_brief(meeting: Meeting) -> MeetingBrief:
     """Research all non-organizer attendees in parallel and build a MeetingBrief."""
     # Research external attendees only (skip the calendar owner / organizer)
@@ -129,27 +111,6 @@ async def _build_brief(meeting: Meeting) -> MeetingBrief:
         watch_outs=watch_outs,
         generated_at=datetime.now(timezone.utc),
     )
-
-
-def _find_meeting(meetings: list[Meeting], title: str = "", meeting_id: str = "") -> Optional[Meeting]:
-    """Find a meeting by partial title match or exact ID."""
-    if meeting_id:
-        for m in meetings:
-            if m.id == meeting_id:
-                return m
-
-    if title:
-        title_lower = title.lower()
-        # Exact match first
-        for m in meetings:
-            if m.title.lower() == title_lower:
-                return m
-        # Partial match
-        for m in meetings:
-            if title_lower in m.title.lower():
-                return m
-
-    return None
 
 
 def register_brief_tools(mcp: FastMCP) -> None:

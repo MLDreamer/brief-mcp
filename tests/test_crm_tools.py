@@ -201,3 +201,31 @@ class TestEnrichBriefWithCrmTool:
         assert not result.is_error
         text = _get_text(result)
         assert "meeting_title" in text.lower() or "provide" in text.lower()
+
+    async def test_crm_error_not_shown_as_crm_data(self, sample_meeting):
+        """CRM error strings (e.g. 429 Too Many Requests) must NOT appear as CRM data."""
+        mcp = _make_mcp()
+        with patch(
+            "src.brief_mcp.tools.crm_tool.get_upcoming_events",
+            new_callable=AsyncMock,
+            return_value=[sample_meeting],
+        ), patch(
+            "src.brief_mcp.tools._shared.research_person",
+            new_callable=AsyncMock,
+            return_value=PersonProfile(name="Bob Patel", company="PartnerCo"),
+        ), patch(
+            "src.brief_mcp.tools.crm_tool._hubspot_crm_context",
+            new_callable=AsyncMock,
+            return_value="CRM error for Bob Patel: 429 Too Many Requests",
+        ):
+            result = await mcp.call_tool(
+                "enrich_brief_with_crm",
+                {"meeting_title": "Q4 Partnership Review"},
+            )
+
+        assert not result.is_error
+        text = _get_text(result)
+        assert "Too Many Requests" not in text
+        assert "CRM error" not in text
+        # The section should fall back to the "no records found" message
+        assert "No HubSpot records found" in text

@@ -173,6 +173,7 @@ class TestDebriefMeetingTool:
         assert "Action Items" in text
         # The extracted tasks should appear in the output
         assert "contract" in text.lower() or "Bob" in text
+        assert "Alice" in text or "technical review" in text.lower()
 
     async def test_debrief_meeting_no_title_returns_error(self, memory_db):
         """Calling debrief_meeting without a title returns an error message."""
@@ -203,6 +204,28 @@ class TestDebriefMeetingTool:
             )
         text = _get_text(result)
         assert "notes" in text.lower() or "Please provide" in text
+
+    async def test_owner_is_single_word_not_two(self, memory_db):
+        """@Alice send X → owner=Alice, task=send X (not owner=Alice send, task=X)"""
+        mcp = _make_mcp()
+        with patch(
+            "src.brief_mcp.tools.debrief_tool.get_upcoming_events",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await mcp.call_tool(
+                "debrief_meeting",
+                {
+                    "meeting_title": "Owner Regex Test",
+                    "notes": "ACTION: @Alice send the spec by Friday",
+                },
+            )
+        assert not result.is_error
+        text = _get_text(result)
+        # "send" must appear in the output (it's part of the task, not the owner)
+        assert "send" in text.lower()
+        # "Alice send" must NOT appear as the owner value in the action items section
+        assert "owner: Alice send" not in text.lower()
 
 
 # ── search_meeting_history tool ───────────────────────────────────────────────

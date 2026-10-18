@@ -46,7 +46,7 @@ def _parse_action_items_from_text(text: str) -> list[dict]:
 
     # Explicit action/todo markers
     action_patterns = [
-        re.compile(r"(?:ACTION|TODO|FOLLOW.?UP)\s*:\s*(?:@(\w+(?:\s\w+)?)\s+)?(.+?)(?:\s+by\s+(\w.+?))?$", re.IGNORECASE | re.MULTILINE),
+        re.compile(r"^(?:ACTION|TODO|FOLLOW.?UP|AI)\s*:\s*(?:@(\w+)\s+)?(.+?)(?:\s+by\s+(\w.+?))?$", re.IGNORECASE | re.MULTILINE),
         re.compile(r"^[-*]\s+\[\s?\]\s+(.+)$", re.MULTILINE),
     ]
 
@@ -246,7 +246,7 @@ def register_debrief_tools(mcp: FastMCP) -> None:
             meetings = await get_upcoming_events(hours_ahead=2, hours_past=24)
             if not meetings:
                 from ..integrations.outlook_calendar import get_outlook_events
-                meetings = await get_outlook_events(hours_ahead=2)
+                meetings = await get_outlook_events(hours_ahead=2, hours_past=24)
             calendar_meeting = _find_meeting(meetings, title=meeting_title)
             if calendar_meeting:
                 meeting_date = calendar_meeting.start_time.isoformat()
@@ -265,7 +265,7 @@ def register_debrief_tools(mcp: FastMCP) -> None:
                     # Try to detect "Task by Owner" or "@Owner: Task" patterns
                     owner = ""
                     task = item
-                    owner_match = re.match(r"@(\w+(?:\s\w+)?)\s*:?\s*(.+)", item)
+                    owner_match = re.match(r"@(\w+)\s*:?\s*(.+)", item)
                     if owner_match:
                         owner = owner_match.group(1)
                         task = owner_match.group(2).strip()
@@ -581,6 +581,9 @@ def register_debrief_tools(mcp: FastMCP) -> None:
         # 1. Fetch calendar
         try:
             meetings = await get_upcoming_events(24)
+            if not meetings:
+                from ..integrations.outlook_calendar import get_outlook_events
+                meetings = await get_outlook_events(hours_ahead=24, hours_past=24)
         except Exception as exc:
             logger.error("brief_with_history: calendar fetch failed: %s", exc)
             return f"Failed to fetch calendar: {exc}"

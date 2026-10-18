@@ -13,7 +13,7 @@ import asyncio
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -223,7 +223,7 @@ async def research_person(name: str, company: str = "") -> PersonProfile:
         recent_news=recent_news,
         company_news=company_news,
         background=background,
-        research_timestamp=datetime.now(),
+        research_timestamp=datetime.now(timezone.utc),
         research_sources=sources,
     )
 

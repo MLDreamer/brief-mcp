@@ -178,10 +178,25 @@ def save_meeting_record(record: dict) -> str:
     with _get_connection() as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO meetings
+            INSERT INTO meetings
                 (id, title, date, attendees, brief_summary, action_items, outcomes,
                  follow_up_sent, completed_items, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title,
+                date=excluded.date,
+                attendees=excluded.attendees,
+                brief_summary=excluded.brief_summary,
+                action_items=excluded.action_items,
+                outcomes=excluded.outcomes,
+                follow_up_sent=CASE
+                    WHEN meetings.follow_up_sent=1 THEN 1
+                    ELSE excluded.follow_up_sent
+                END,
+                completed_items=CASE
+                    WHEN excluded.completed_items='[]' THEN meetings.completed_items
+                    ELSE excluded.completed_items
+                END
             """,
             (
                 meeting_id,
@@ -333,7 +348,7 @@ def get_action_items(status: str = "open") -> list[dict]:
         for item in action_items:
             if isinstance(item, dict):
                 task = item.get("task", "")
-                if task in completed:
+                if status != "all" and task in completed:
                     continue
                 results.append(
                     {
@@ -347,7 +362,7 @@ def get_action_items(status: str = "open") -> list[dict]:
                     }
                 )
             elif isinstance(item, str):
-                if item in completed:
+                if status != "all" and item in completed:
                     continue
                 results.append(
                     {

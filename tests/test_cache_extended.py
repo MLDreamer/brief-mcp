@@ -185,3 +185,62 @@ class TestInvalidateProfile:
         # Full key is still present
         found = get_cached_profile("Heather Grant", "TechStartup Inc")
         assert found is not None
+
+
+# ── _research_attendee_with_cache caching-guard tests ────────────────────────
+
+
+import pytest
+from unittest.mock import AsyncMock, patch
+from src.brief_mcp.models import PersonProfile
+from src.brief_mcp.cache import get_cached_profile, clear_cache
+
+
+@pytest.mark.asyncio
+async def test_empty_profile_not_cached():
+    clear_cache()
+    empty = PersonProfile(name="No Sources Person", research_sources=[])
+    with patch("src.brief_mcp.tools._shared.research_person", new_callable=AsyncMock, return_value=empty):
+        from src.brief_mcp.tools._shared import _research_attendee_with_cache
+        await _research_attendee_with_cache("No Sources Person", "")
+    assert get_cached_profile("No Sources Person", "") is None
+
+
+@pytest.mark.asyncio
+async def test_nonempty_profile_is_cached():
+    clear_cache()
+    rich = PersonProfile(name="Has Sources Person", research_sources=["https://example.com"])
+    with patch("src.brief_mcp.tools._shared.research_person", new_callable=AsyncMock, return_value=rich):
+        from src.brief_mcp.tools._shared import _research_attendee_with_cache
+        await _research_attendee_with_cache("Has Sources Person", "")
+    assert get_cached_profile("Has Sources Person", "") is not None
+
+
+# ── Timezone-aware timestamp regression test ─────────────────────────────────
+
+
+def test_cache_hit_does_not_crash_with_aware_timestamp():
+    from src.brief_mcp.models import PersonProfile
+    from src.brief_mcp.cache import set_cached_profile, get_cached_profile, clear_cache
+    from datetime import datetime, timezone
+    clear_cache()
+    p = PersonProfile(name="Aware Test", research_timestamp=datetime.now(timezone.utc))
+    set_cached_profile(p)
+    # Second get must not raise TypeError
+    result = get_cached_profile("Aware Test", "")
+    assert result is not None
+
+
+def test_same_name_different_company_no_overwrite():
+    from src.brief_mcp.models import PersonProfile
+    from src.brief_mcp.cache import set_cached_profile, get_cached_profile, clear_cache
+    from datetime import datetime, timezone
+    clear_cache()
+    acme_jane = PersonProfile(name="Jane Doe", company="Acme", research_timestamp=datetime.now(timezone.utc))
+    globex_jane = PersonProfile(name="Jane Doe", company="Globex", research_timestamp=datetime.now(timezone.utc))
+    set_cached_profile(acme_jane)
+    set_cached_profile(globex_jane)
+    # Name-only key should still point to the FIRST stored profile
+    result = get_cached_profile("Jane Doe", "")
+    assert result is not None
+    assert result.company == "Acme"

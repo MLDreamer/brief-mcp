@@ -130,8 +130,9 @@ def register_crm_tools(mcp: FastMCP) -> None:
         crm_section_lines: list[str] = []
         sep = "-" * 60
         has_crm_data = False
+        _CRM_SKIP = ("not configured", "No CRM record", "CRM error", "Error:", "Too Many Requests")
         for crm_text in crm_results:
-            if crm_text and "not configured" not in crm_text and "No CRM record" not in crm_text:
+            if crm_text and not any(pat in crm_text for pat in _CRM_SKIP):
                 has_crm_data = True
                 crm_section_lines.append(crm_text)
 
