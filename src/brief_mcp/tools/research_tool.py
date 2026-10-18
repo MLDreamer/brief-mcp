@@ -15,25 +15,32 @@ def register_research_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def research_attendee(name: str, company: str = "", context: str = "") -> dict:
-        """Research a meeting attendee: current role, company news, and background.
+        """Research a person's professional background, role, and recent news.
 
-        Results are cached for 60 minutes — repeated calls for the same person
-        return instantly without new API requests.
+        Use before any meeting where you need context on an attendee. Prefer
+        brief_all_today or get_meeting_brief when researching all attendees for a
+        meeting — they batch-research in parallel. Call this tool directly only when
+        researching a single person outside of a calendar flow.
+
+        Writes the profile to a 60-minute in-memory cache. Subsequent calls for the
+        same name+company pair return the cached result instantly with cached=true.
+        If all web searches fail (rate limit, network error), returns an empty profile
+        with no role or sources rather than raising an error — check research_sources
+        to confirm results were found.
 
         Args:
-            name: Full name of the person to research (required).
-            company: Their company or organization (improves accuracy).
-            context: Any additional context you know about them (optional).
+            name: Full name of the person (required). More specific is better —
+                  "Jane Smith" outperforms "Jane".
+            company: Current employer or organization. Strongly recommended for common
+                     names; significantly narrows search results.
+            context: Any background you already know (optional). Used to fill the
+                     background field if web research finds nothing.
 
         Returns:
-            A structured profile dict with keys:
-              - name, current_role, company
-              - background (short bio)
-              - linkedin_summary
-              - recent_news (list of headlines)
-              - company_news (list of company headlines)
-              - research_timestamp (ISO datetime)
-              - research_sources (list of URLs)
+            Profile dict with: name, current_role, company, background,
+            linkedin_summary, recent_news (list), company_news (list),
+            research_timestamp (ISO), research_sources (list of URLs), cached (bool).
+            Returns {error: ...} only if name is blank.
         """
         if not name or not name.strip():
             return {"error": "name is required"}

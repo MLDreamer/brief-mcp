@@ -23,20 +23,26 @@ def register_outlook_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_outlook_meetings(hours_ahead: int = 24) -> list[dict]:
-        """Get upcoming meetings from Outlook/Microsoft 365 calendar.
+        """List upcoming meetings from Outlook / Microsoft 365 calendar.
 
-        Configure AZURE_CLIENT_ID in .env to enable. On first run, a device-code
-        authentication prompt will appear in the terminal — visit the URL shown
-        and enter the code to authorise access.
+        Use instead of get_upcoming_meetings when the user's calendar is on
+        Microsoft 365 / Exchange rather than Google. Do not call if AZURE_CLIENT_ID
+        is not configured — returns an empty list silently.
 
-        Returns the same format as get_upcoming_meetings (Google Calendar).
+        On first use, a device-code authentication prompt appears in the server
+        terminal. The user must visit the printed URL and enter the code; the token
+        is then cached locally for subsequent calls.
+
+        Read-only. Does not modify calendar data or local storage.
 
         Args:
-            hours_ahead: How far ahead to look in hours (default: 24).
+            hours_ahead: How many hours ahead to look (default 24, max recommended 168).
 
         Returns:
-            List of meeting dicts with id, title, start/end times, attendees, and meeting URL.
-            Returns an empty list with an explanation if Outlook is not configured.
+            List of meeting objects identical in shape to get_upcoming_meetings output
+            (id, title, start_time, end_time, duration_minutes, attendees, meeting_url,
+            location) plus source="outlook". Returns [] if AZURE_CLIENT_ID is not set
+            or no meetings exist in the window.
         """
         try:
             meetings = await get_outlook_events(hours_ahead)
@@ -78,18 +84,27 @@ def register_outlook_tools(mcp: FastMCP) -> None:
         meeting_id: str = "",
         hours_ahead: int = 24,
     ) -> str:
-        """Generate a meeting brief from your Outlook/Microsoft 365 calendar.
+        """Generate a pre-meeting brief for an Outlook / Microsoft 365 meeting.
 
-        Same behaviour as get_meeting_brief but reads from Microsoft 365 instead of
-        Google Calendar. Requires AZURE_CLIENT_ID to be set in .env.
+        Identical behaviour to get_meeting_brief but reads from Microsoft 365 instead
+        of Google Calendar. Use this when the user's calendar is on Outlook/Exchange.
+        Requires AZURE_CLIENT_ID in .env; returns an explanatory message if absent.
+        Must provide at least one of meeting_title or meeting_id.
+
+        Read-only. Attendee profiles cached 60 min. Does not write to calendar or memory.
 
         Args:
-            meeting_title: Partial or full Outlook meeting title to match.
-            meeting_id: Exact Graph API event ID (takes priority over title).
-            hours_ahead: How far ahead to look for the meeting (default: 24h).
+            meeting_title: Partial or full title (case-insensitive substring match).
+                           Call get_outlook_meetings first if unsure of exact title.
+            meeting_id: Exact Graph API event ID from get_outlook_meetings (takes
+                        priority over title when both provided).
+            hours_ahead: Search window in hours (default 24).
 
         Returns:
-            A formatted brief card string, or an error message if the meeting is not found.
+            Multi-line formatted brief card with attendee profiles, talking points,
+            and watch-outs, labelled "[Source: Outlook / Microsoft 365]".
+            Returns a plain-text error listing available meeting titles if no match,
+            or if AZURE_CLIENT_ID is not configured.
         """
         if not meeting_title and not meeting_id:
             return (

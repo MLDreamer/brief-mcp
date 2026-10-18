@@ -14,19 +14,29 @@ def register_calendar_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_upcoming_meetings(hours_ahead: int = 24) -> list[dict]:
-        """Get upcoming meetings from Google Calendar for the next N hours.
+        """List upcoming meetings from Google Calendar.
 
-        Returns a list of meeting objects with:
-        - id, title, start_time, end_time (ISO format)
-        - attendees (name + email)
-        - meeting_url (Google Meet / Zoom / Teams link if present)
-        - location, description
+        Call this first to discover meeting IDs and titles before calling
+        get_meeting_brief or brief_with_history. Do not call if GOOGLE_CREDENTIALS_PATH
+        is not configured — it will return an empty list without an error.
+
+        Read-only. Does not modify calendar data or write to local storage.
+        Safe to call multiple times; subsequent calls reflect real-time calendar state.
 
         Args:
-            hours_ahead: How many hours into the future to look (default: 24).
+            hours_ahead: How many hours ahead to look (1–168; default 24).
+                         Use 2 for imminent meetings, 24 for today, 168 for the week.
 
         Returns:
-            List of meeting dicts. Empty list if Google Calendar is not configured.
+            List of meeting objects, each containing:
+              id (str) — use this in get_meeting_brief to skip title matching
+              title, start_time, end_time (ISO 8601 with timezone)
+              duration_minutes (int)
+              attendees — list of {name, email, is_organizer}
+              meeting_url — video link if present (Meet / Zoom / Teams), else null
+              location, description (truncated to 300 chars)
+            Returns [] if no meetings exist in the window or Google Calendar
+            is not configured (GOOGLE_CREDENTIALS_PATH not set).
         """
         if hours_ahead < 1 or hours_ahead > 168:
             return [{"error": "hours_ahead must be between 1 and 168"}]

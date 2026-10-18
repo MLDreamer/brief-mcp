@@ -216,20 +216,36 @@ def register_debrief_tools(mcp: FastMCP) -> None:
         action_items: str = "",
         outcomes: str = "",
     ) -> str:
-        """Record what happened in a meeting and generate follow-up materials.
+        """Record a completed meeting and generate a follow-up email draft.
 
-        Provide:
-        - meeting_title: Matches a recent meeting on your calendar (or just the meeting name).
-        - notes: Your raw meeting notes (bullet points, transcript snippet, anything).
-        - action_items: Comma-separated list of tasks and owners (optional — will be
-                        auto-extracted from notes if not provided).
-        - outcomes: What was decided/agreed (optional — comma-separated).
+        Call this after a meeting ends — not before. Saves the meeting record,
+        attendees, action items, and outcomes to local memory (SQLite at
+        ~/.brief-mcp/memory.db). Idempotent: calling again with the same
+        meeting_title re-saves the record for the same calendar event ID,
+        updating notes and action items while preserving any items already
+        marked done.
+
+        Action items are auto-extracted from notes when action_items is omitted.
+        Patterns recognised: lines starting with "ACTION:", "TODO:", "AI:", or
+        "FOLLOW-UP:" and bullet checkboxes "- [ ] ...". Use @Name to assign an
+        owner (e.g. "TODO: @Alice send the spec by Friday").
+
+        Args:
+            meeting_title: Title of the meeting (required). Used to look up the
+                           calendar event for attendee names and date. A plain
+                           string works even if the meeting is not on calendar.
+            notes: Raw meeting notes — bullet points, transcript, or prose.
+                   The longer and more detailed, the richer the output.
+            action_items: Comma-separated tasks, e.g. "Alice to send spec, Bob
+                          to schedule follow-up". Leave blank to auto-extract
+                          from notes. Explicit items are used as-is without
+                          regex extraction.
+            outcomes: Comma-separated decisions or agreements from the meeting.
+                      Optional — leave blank if nothing was formally decided.
 
         Returns:
-        - Structured meeting record saved to memory
-        - Draft follow-up email
-        - Action item list with owners
-        - Next-step suggestions
+            Formatted debrief card with summary, action items, outcomes, and a
+            draft follow-up email. Confirms save location (memory.db).
         """
         if not meeting_title.strip():
             return "Please provide a meeting_title to record the debrief."
@@ -373,18 +389,24 @@ def register_debrief_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def search_meeting_history(query: str, limit: int = 10) -> str:
-        """Search your past meeting history.
+        """Full-text search across all past meeting records.
 
-        Query by person name, company name, topic, decision, or date.
-        Uses full-text search (FTS5) across meeting titles, attendees,
-        summaries, action items, and outcomes.
+        Use to find meetings by attendee name, company, topic discussed, decision made,
+        or any keyword that appeared in notes, summaries, or outcomes. Prefer
+        get_person_history when looking up all interactions with a specific person.
+        Requires at least one prior debrief_meeting call; returns no results on an
+        empty database.
+
+        Read-only. Does not modify memory.
 
         Args:
-            query: Search term (name, topic, company, or keyword).
-            limit: Maximum number of meetings to return (default: 10).
+            query: Search term — person name, company, topic keyword, or decision text.
+                   FTS5 syntax supported: use "exact phrase" for phrase search.
+            limit: Maximum results to return (default 10, max 20).
 
         Returns:
-            Formatted list of matching past meetings with summaries and action items.
+            Formatted list of matching meetings with title, date, attendees, summary,
+            and action items. Returns a plain-text message if no matches are found.
         """
         if not query.strip():
             return "Please provide a search query (name, topic, or keyword)."
@@ -411,16 +433,27 @@ def register_debrief_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_person_history(name: str) -> str:
-        """Get the full interaction history with a specific person.
+        """Retrieve all past interactions with a specific person.
 
-        Shows all past meetings with this person, topics discussed,
-        commitments made, and outcomes.
+        Returns a chronological timeline of every meeting where this person appeared,
+        including topics discussed, sentiment, and notes. Use this when preparing for
+        a recurring meeting or follow-up call to recall prior commitments. Prefer this
+        over search_meeting_history when the query is a person's name — it searches
+        both the interaction log and the meeting-attendee index.
+        Requires prior debrief_meeting calls; returns a helpful message on an empty DB.
+
+        Read-only. Does not modify memory.
 
         Args:
-            name: Full or partial name of the person to look up.
+            name: Full or partial name (case-insensitive substring match).
+                  "Jane" matches "Jane Smith" and "Jane Doe".
+                  Use the full name for a more precise result.
 
         Returns:
-            Formatted interaction history, or a message if no history exists.
+            Chronological interaction timeline with meeting title, date, topics,
+            and notes per entry. Falls back to searching meeting records by name
+            if no direct interaction log exists. Returns a plain-text message with
+            setup guidance if no history is found.
         """
         if not name.strip():
             return "Please provide a person's name."
@@ -489,13 +522,19 @@ def register_debrief_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_open_action_items() -> str:
-        """List all open action items from past meetings.
+        """List every action item that has not yet been individually completed.
 
-        Shows task, owner, meeting context, and how long it has been open.
-        An action item is considered open if the meeting's follow-up has not been marked done.
+        Use at the start of the day or before a follow-up meeting to see outstanding
+        tasks across all past meetings. An action item is open until it is explicitly
+        marked done via mark_action_done (memory module) or until re-debriefed with
+        the task removed. No parameters needed. Does not modify memory.
+
+        Requires prior debrief_meeting calls — returns a setup message on an empty DB.
 
         Returns:
-            Formatted list of open action items with meeting context.
+            Formatted list of open tasks, each showing: task description, owner (if
+            set), source meeting title and date, due date (if set), and how many days
+            the item has been open. Returns a plain-text message if no open items exist.
         """
         loop = asyncio.get_running_loop()
         try:
@@ -555,22 +594,30 @@ def register_debrief_tools(mcp: FastMCP) -> None:
         meeting_title: str = "",
         meeting_id: str = "",
     ) -> str:
-        """Generate a pre-meeting brief that includes past interaction history.
+        """Generate a pre-meeting brief enriched with past interaction history.
 
-        Combines:
-        1. Live calendar lookup + parallel attendee web research (like get_meeting_brief)
-        2. Past meeting history for each attendee (from your memory DB)
-        3. Previous action items and commitments involving these people
+        Use this instead of get_meeting_brief for recurring meetings, follow-up calls,
+        or any meeting where prior context matters. Combines three sources in one call:
+        (1) live calendar lookup + parallel attendee web research, (2) past meeting
+        history for each attendee from local memory, (3) open action items involving
+        these people. Falls back to Outlook calendar if Google returns no meetings.
 
-        This gives a richer "full context" brief — especially valuable for recurring
-        meetings and follow-up calls.
+        Do not call if no prior debrief_meeting records exist — the history section
+        will show "No past meetings recorded" but the brief still works.
+        Must provide at least one of meeting_title or meeting_id.
+
+        Read-only. Attendee profiles cached 60 min. Does not write to memory.
 
         Args:
-            meeting_title: Partial or full meeting title (Google Calendar).
-            meeting_id: Exact meeting ID from get_upcoming_meetings (takes priority).
+            meeting_title: Partial or full meeting title (case-insensitive substring
+                           match against Google Calendar then Outlook, 24-hour window).
+            meeting_id: Exact id from get_upcoming_meetings (takes priority over title).
 
         Returns:
-            Formatted brief card with appended history section.
+            Formatted brief card (same as get_meeting_brief) with an appended
+            PAST INTERACTIONS section per attendee showing prior meeting dates,
+            topics, and open commitments. Returns a plain-text error with available
+            meeting titles if no match is found.
         """
         if not meeting_title and not meeting_id:
             return (

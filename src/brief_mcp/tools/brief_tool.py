@@ -122,22 +122,30 @@ def register_brief_tools(mcp: FastMCP) -> None:
         meeting_id: str = "",
         hours_ahead: int = 24,
     ) -> str:
-        """Generate a full pre-meeting intelligence brief for a single meeting.
+        """Generate a pre-meeting intelligence brief for one Google Calendar meeting.
 
-        Looks up the meeting from your Google Calendar, researches all attendees
-        in parallel, and returns a formatted brief card with:
-        - Attendee profiles (role, company, recent news)
-        - Suggested talking points
-        - Watch-outs and sensitivities
+        Looks up the meeting, researches all external attendees in parallel via web
+        search, and returns a formatted brief card. Use this for a single upcoming
+        meeting. For all of today's meetings at once, use brief_all_today instead.
+        For recurring meetings where past interaction history matters, prefer
+        brief_with_history.
+
+        Read-only. Does not write to calendar or memory. Attendee profiles are cached
+        for 60 minutes — repeated calls for the same meeting are fast.
+        Must provide at least one of meeting_title or meeting_id.
 
         Args:
-            meeting_title: Partial or full meeting title to look up.
-            meeting_id: Exact meeting ID from get_upcoming_meetings (takes priority).
-            hours_ahead: How far ahead to look for the meeting (default: 24h).
+            meeting_title: Partial or full title (case-insensitive substring match).
+                           Example: "Q4 review" matches "Q4 Partnership Review".
+            meeting_id: Exact id from get_upcoming_meetings output (takes priority
+                        over title when both are provided).
+            hours_ahead: Search window in hours (default 24). Increase if the meeting
+                         is further out.
 
         Returns:
-            A formatted brief card as a multi-line string.
-            Returns an error message if the meeting is not found.
+            Multi-line formatted brief card with attendee profiles, talking points,
+            and watch-outs. Returns a plain-text error with available meeting titles
+            if no match is found, or if Google Calendar is not configured.
         """
         if not meeting_title and not meeting_id:
             return (
@@ -171,15 +179,21 @@ def register_brief_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def brief_all_today() -> str:
-        """Generate meeting briefs for ALL of today's meetings.
+        """Generate intelligence briefs for every meeting in the next 24 hours.
 
-        Fetches today's calendar, then researches all attendees across all meetings
-        in parallel (deduplicated — each person only researched once even if they
-        appear in multiple meetings). Perfect for morning prep.
+        The most efficient morning-prep tool: fetches the full day's calendar, then
+        researches all unique attendees in parallel (each person researched once even
+        if they appear in multiple meetings). Use this at the start of the day.
+        For a single specific meeting, use get_meeting_brief instead.
+
+        Read-only. Does not write to calendar or memory. Requires Google Calendar
+        (GOOGLE_CREDENTIALS_PATH). Attendee profiles are cached for 60 minutes.
 
         Returns:
-            A formatted string with sequential briefs for every meeting today,
-            separated by dividers. Returns a message if no meetings are found.
+            Concatenated brief cards for every meeting today, separated by dividers,
+            with a header showing the date and meeting count.
+            Returns a plain-text message if no meetings exist in the next 24 hours
+            or if Google Calendar is not configured.
         """
         # Look ahead just enough to cover today (up to midnight)
         now = datetime.now(timezone.utc)

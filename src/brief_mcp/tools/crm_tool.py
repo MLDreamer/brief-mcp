@@ -27,20 +27,25 @@ def register_crm_tools(mcp: FastMCP) -> None:
         email: str = "",
         company: str = "",
     ) -> str:
-        """Look up a person in HubSpot CRM.
+        """Look up a person's record in HubSpot CRM.
 
         Returns deal stage, last contact date, lifecycle stage, associated deals,
-        and interaction notes for the given person.
+        and interaction notes for the contact. Use before sales, partner, or customer
+        meetings to surface deal context. Do not call if HUBSPOT_API_KEY is not set —
+        returns a "not configured" message rather than an error.
 
-        Set HUBSPOT_API_KEY in .env to enable CRM integration.
+        Read-only. Does not create or modify CRM records.
 
         Args:
-            name: Full name of the person to look up (required).
-            email: Email address for a more precise match (optional but recommended).
-            company: Company name to narrow the search (optional).
+            name: Full name of the contact to search (required).
+            email: Email address — greatly improves match precision when provided.
+                   Recommended whenever the attendee's email is known.
+            company: Company name to disambiguate contacts with common names (optional).
 
         Returns:
-            A formatted CRM summary string, or a message if no record is found.
+            Formatted text summary with deal stage, lifecycle, last contact, and notes.
+            Returns a plain-text message (not an error) if no HubSpot record exists,
+            if HUBSPOT_API_KEY is not configured, or if the contact is not found.
         """
         if not name.strip():
             return "Please provide a name to look up in HubSpot."
@@ -53,20 +58,27 @@ def register_crm_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def enrich_brief_with_crm(meeting_title: str) -> str:
-        """Generate a meeting brief enriched with HubSpot CRM data.
+        """Generate a meeting brief that includes HubSpot CRM deal context.
 
-        Combines Google Calendar lookup + parallel web research on attendees +
-        HubSpot CRM deal context for each attendee.  Best used for sales meetings,
-        partner reviews, and customer calls where CRM context matters.
+        Combines three data sources in one call: Google Calendar (meeting lookup),
+        web research (attendee profiles), and HubSpot CRM (deal stage, lifecycle,
+        notes). Best for sales meetings, partner reviews, and customer calls.
+        Use get_meeting_brief instead if CRM data is not needed or HUBSPOT_API_KEY
+        is not set — enrich_brief_with_crm gracefully omits the CRM section when
+        the key is absent.
 
-        Set HUBSPOT_API_KEY in .env to unlock CRM enrichment.
+        Read-only. Does not modify calendar, CRM records, or local memory.
+        Attendee profiles and CRM lookups are not cached between calls.
 
         Args:
-            meeting_title: Partial or full meeting title to look up on Google Calendar.
+            meeting_title: Partial or full Google Calendar meeting title
+                           (case-insensitive substring match, 24-hour window).
 
         Returns:
-            A formatted brief card with an appended CRM context section,
-            or an error message if the meeting is not found.
+            Formatted brief card followed by a CRM CONTEXT section per attendee.
+            The CRM section is omitted if HUBSPOT_API_KEY is not configured or no
+            HubSpot records are found. Returns a plain-text error if the meeting
+            title does not match any event in the next 24 hours.
         """
         if not meeting_title.strip():
             return (
